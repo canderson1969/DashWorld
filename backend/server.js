@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -9,6 +10,15 @@ import { logger, logSuccess, logError } from './utils/logger.js';
 import { reverseGeocode } from './utils/geocoding.js';
 import { authenticateToken } from './utils/auth.js';
 import { ensureMP4Format } from './utils/videoConverter.js';
+import { uploadLimiter, apiLimiter } from './utils/rateLimiter.js';
+import {
+  transformFootageUrls,
+  transformFootageListUrls,
+  uploadFile,
+  isCloudStorage,
+  getFileUrl
+} from './utils/storage.js';
+import { isLambdaEnabled, invokeVideoProcessing } from './utils/lambda.js';
 import authRoutes from './routes/authRoutes.js';
 import messagingRoutes from './routes/messagingRoutes.js';
 import {
@@ -76,6 +86,10 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, SERVER_CONFIG.UPLOAD_DIR)));
 
+// Apply general API rate limiter to all /api routes
+// Limit: 100 requests per IP per minute
+app.use('/api', apiLimiter);
+
 // Auth routes
 app.use('/api/auth', authRoutes);
 
@@ -127,9 +141,7 @@ function ensureDateBasedDir(baseDir, date = new Date()) {
   return fullPath;
 }
 
-// Initialize SQLite database and migrate from JSON if needed
-initializeDatabase(dataDir);
-migrateFromJson(dataDir);
+// Database initialization happens in startServer() below
 
 /**
  * Generate a single quality version of a video
@@ -163,8 +175,9 @@ function generateQualityVersion(inputPath, outputPath, qualityConfig, footageId,
     const process = spawn('ffmpeg', ffmpegArgs);
     let stderrData = '';
 
-    // Initialize progress for this quality
-    setEncodingProgress(footageId, label, 0, 'processing');
+    // Initialize progress for this quality (fire-and-forget async)
+    setEncodingProgress(footageId, label, 0, 'processing').catch(err =>
+      logger.error('Failed to set initial encoding progress', { error: err.message }));
 
     process.stderr.on('data', (data) => {
       const chunk = data.toString();
@@ -190,25 +203,29 @@ function generateQualityVersion(inputPath, outputPath, qualityConfig, footageId,
           progress
         });
 
-        // Update progress in database
-        setEncodingProgress(footageId, label, progress, 'processing');
+        // Update progress in database (fire-and-forget async)
+        setEncodingProgress(footageId, label, progress, 'processing').catch(err =>
+          logger.error('Failed to update encoding progress', { error: err.message }));
       }
     });
 
     process.on('error', (error) => {
-      // Mark as failed
-      setEncodingProgress(footageId, label, 0, 'failed');
+      // Mark as failed (fire-and-forget async)
+      setEncodingProgress(footageId, label, 0, 'failed').catch(err =>
+        logger.error('Failed to set failed encoding progress', { error: err.message }));
       reject(error);
     });
 
     process.on('close', (code) => {
       if (code !== 0) {
-        // Mark as failed
-        setEncodingProgress(footageId, label, 0, 'failed');
+        // Mark as failed (fire-and-forget async)
+        setEncodingProgress(footageId, label, 0, 'failed').catch(err =>
+          logger.error('Failed to set failed encoding progress', { error: err.message }));
         reject(new Error(`FFmpeg exited with code ${code}: ${stderrData}`));
       } else {
-        // Mark as complete
-        setEncodingProgress(footageId, label, 100, 'completed');
+        // Mark as complete (fire-and-forget async)
+        setEncodingProgress(footageId, label, 100, 'completed').catch(err =>
+          logger.error('Failed to set completed encoding progress', { error: err.message }));
         resolve();
       }
     });
@@ -243,7 +260,7 @@ async function compressVideoBackground(footageId, filename) {
   // Get video duration from database
   let videoDuration = 0;
   try {
-    const footageItem = getFootageById(footageId);
+    const footageItem = await getFootageById(footageId);
     videoDuration = footageItem?.duration || 0;
   } catch (error) {
     logger.warn('Could not get video duration for progress tracking', {
@@ -274,14 +291,21 @@ async function compressVideoBackground(footageId, filename) {
   const randomId = Math.round(Math.random() * 1E9);
 
   try {
-    // Generate each quality version in the same date-based directory as the original
-    const outputDir = datePath !== '.' ? path.join(uploadsDir, datePath) : uploadsDir;
+    // Create ID subfolder within the date directory for organized storage
+    const baseDateDir = datePath !== '.' ? path.join(uploadsDir, datePath) : uploadsDir;
+    const outputDir = path.join(baseDateDir, String(footageId));
+
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
 
     for (const quality of qualities) {
       const outputBasename = `${quality.label}-${timestamp}-${randomId}${path.extname(baseFilename)}`;
       const outputPath = path.join(outputDir, outputBasename);
-      // Store full path with date prefix for database
-      const outputFilename = datePath !== '.' ? `${datePath}/${outputBasename}` : outputBasename;
+      // Store full path with date prefix and ID folder for database
+      const outputFilename = datePath !== '.'
+        ? `${datePath}/${footageId}/${outputBasename}`
+        : `${footageId}/${outputBasename}`;
 
       logger.info(`Generating ${quality.label} version`, {
         footageId,
@@ -302,9 +326,22 @@ async function compressVideoBackground(footageId, filename) {
           operation: 'generate_quality_version'
         });
 
+        // Upload to R2 if cloud storage is enabled
+        if (isCloudStorage()) {
+          const r2Key = `videos/${outputFilename.replace(/\\/g, '/')}`;
+          await uploadFile(outputPath, r2Key, 'video/mp4');
+          fs.unlinkSync(outputPath); // Clean up local file after R2 upload
+          logger.info(`${quality.label} uploaded to R2`, {
+            footageId,
+            quality: quality.label,
+            r2Key,
+            operation: 'upload_to_r2'
+          });
+        }
+
         // Update database immediately after each quality completes
-        updateFootage(footageId, {
-          [`filename_${quality.label}`]: outputFilename,
+        await updateFootage(footageId, {
+          [`filename_${quality.label}`]: outputFilename.replace(/\\/g, '/'),
           // Update main filename to best available quality (prefer 720p, then 480p, then 1080p, then 360p, then 240p)
           filename: qualityFilenames['720p'] || qualityFilenames['480p'] || qualityFilenames['1080p'] || qualityFilenames['360p'] || qualityFilenames['240p'] || filename
         });
@@ -346,8 +383,8 @@ async function compressVideoBackground(footageId, filename) {
     }
 
     // Clean up progress data after 1 minute (allow frontend to fetch final state)
-    setTimeout(() => {
-      clearEncodingProgress(footageId);
+    setTimeout(async () => {
+      await clearEncodingProgress(footageId);
       logger.info('Cleaned up encoding progress data', { footageId });
     }, 60000);
   } catch (error) {
@@ -406,13 +443,13 @@ const upload = multer({
 // API Routes
 
 // Get all footage (with pagination support)
-app.get('/api/footage', (req, res) => {
+app.get('/api/footage', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 1000;
     const offset = parseInt(req.query.offset) || 0;
 
-    const footage = getAllFootage({ limit, offset });
-    const total = getFootageCount();
+    const footage = await getAllFootage({ limit, offset });
+    const total = await getFootageCount();
 
     logSuccess('Fetched all footage', {
       count: footage.length,
@@ -422,14 +459,17 @@ app.get('/api/footage', (req, res) => {
       operation: 'fetch_all_footage'
     });
 
+    // Transform footage to include full URLs
+    const transformedFootage = transformFootageListUrls(footage);
+
     // Return with pagination metadata if pagination params provided
     if (req.query.limit || req.query.offset) {
       res.json({
-        data: footage,
+        data: transformedFootage,
         pagination: { total, limit, offset, hasMore: offset + footage.length < total }
       });
     } else {
-      res.json(footage);
+      res.json(transformedFootage);
     }
   } catch (error) {
     logError('Failed to fetch footage from database', error, {
@@ -441,10 +481,10 @@ app.get('/api/footage', (req, res) => {
 });
 
 // Get single footage by ID
-app.get('/api/footage/:id', (req, res) => {
+app.get('/api/footage/:id', async (req, res) => {
   try {
     const footageId = parseInt(req.params.id);
-    const item = getFootageById(footageId);
+    const item = await getFootageById(footageId);
 
     if (!item) {
       logger.warn('Footage not found', {
@@ -462,7 +502,7 @@ app.get('/api/footage/:id', (req, res) => {
       operation: 'fetch_footage_by_id'
     });
 
-    res.json(item);
+    res.json(transformFootageUrls(item));
   } catch (error) {
     logError('Failed to fetch footage by ID', error, {
       requestedId: req.params.id,
@@ -474,10 +514,10 @@ app.get('/api/footage/:id', (req, res) => {
 });
 
 // Get encoding progress for a footage item
-app.get('/api/footage/:id/encoding-progress', (req, res) => {
+app.get('/api/footage/:id/encoding-progress', async (req, res) => {
   try {
     const footageId = parseInt(req.params.id);
-    const progress = getEncodingProgress(footageId);
+    const progress = await getEncodingProgress(footageId);
 
     logger.debug('Encoding progress fetched', {
       footageId,
@@ -494,8 +534,92 @@ app.get('/api/footage/:id/encoding-progress', (req, res) => {
   }
 });
 
+// Lambda webhook for video processing completion
+// Called by Lambda function after processing completes
+app.post('/api/webhooks/lambda/video-processed', async (req, res) => {
+  try {
+    // Verify webhook secret
+    const webhookSecret = req.headers['x-webhook-secret'];
+    if (process.env.WEBHOOK_SECRET && webhookSecret !== process.env.WEBHOOK_SECRET) {
+      logger.warn('Invalid webhook secret', {
+        operation: 'lambda_webhook_auth_failed'
+      });
+      return res.status(401).json({ error: 'Invalid webhook secret' });
+    }
+
+    const {
+      footageId,
+      status,
+      results,
+      mainFilename,
+      filename_240p,
+      filename_360p,
+      filename_480p,
+      filename_720p,
+      filename_1080p,
+      error: errorMessage
+    } = req.body;
+
+    if (!footageId) {
+      return res.status(400).json({ error: 'Missing footageId' });
+    }
+
+    logger.info('Lambda webhook received', {
+      footageId,
+      status,
+      operation: 'lambda_webhook_received'
+    });
+
+    if (status === 'completed') {
+      // Update database with processed video paths
+      const updateData = {
+        processing_status: 'completed',
+        filename: mainFilename || undefined,
+        filename_240p: filename_240p || undefined,
+        filename_360p: filename_360p || undefined,
+        filename_480p: filename_480p || undefined,
+        filename_720p: filename_720p || undefined,
+        filename_1080p: filename_1080p || undefined
+      };
+
+      // Remove undefined values
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === undefined) delete updateData[key];
+      });
+
+      await updateFootage(footageId, updateData);
+
+      // Clear any encoding progress data
+      await clearEncodingProgress(footageId);
+
+      logSuccess('Video processing completed via Lambda', {
+        footageId,
+        qualities: Object.keys(results || {}).filter(k => results[k]?.success),
+        operation: 'lambda_processing_completed'
+      });
+
+    } else if (status === 'failed') {
+      await updateFootage(footageId, { processing_status: 'failed' });
+
+      logError('Video processing failed via Lambda', new Error(errorMessage || 'Unknown error'), {
+        footageId,
+        operation: 'lambda_processing_failed'
+      });
+    }
+
+    res.json({ success: true });
+
+  } catch (error) {
+    logError('Lambda webhook handler failed', error, {
+      operation: 'lambda_webhook_error'
+    });
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
 // Upload new footage (protected route - requires authentication)
-app.post('/api/footage/upload', authenticateToken, upload.fields([
+// Rate limited: 20 uploads per IP per hour
+app.post('/api/footage/upload', uploadLimiter, authenticateToken, upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'thumbnail_small', maxCount: 1 },
   { name: 'thumbnail_medium', maxCount: 1 },
@@ -563,23 +687,23 @@ app.post('/api/footage/upload', authenticateToken, upload.fields([
     let thumbnailMediumFilename = null;
     let thumbnailLargeFilename = null;
 
+    // Temporarily store thumbnails in date folder - will be moved to ID folder after DB insert
     if (thumbnailSmall) {
       const thumbnailDest = path.join(thumbnailDateDir, thumbnailSmall.filename);
       fs.renameSync(thumbnailSmall.path, thumbnailDest);
-      // Store with date path prefix for proper retrieval
-      thumbnailSmallFilename = `${thumbnailDatePath}/${thumbnailSmall.filename}`;
+      thumbnailSmallFilename = thumbnailSmall.filename;
     }
 
     if (thumbnailMedium) {
       const thumbnailDest = path.join(thumbnailDateDir, thumbnailMedium.filename);
       fs.renameSync(thumbnailMedium.path, thumbnailDest);
-      thumbnailMediumFilename = `${thumbnailDatePath}/${thumbnailMedium.filename}`;
+      thumbnailMediumFilename = thumbnailMedium.filename;
     }
 
     if (thumbnailLarge) {
       const thumbnailDest = path.join(thumbnailDateDir, thumbnailLarge.filename);
       fs.renameSync(thumbnailLarge.path, thumbnailDest);
-      thumbnailLargeFilename = `${thumbnailDatePath}/${thumbnailLarge.filename}`;
+      thumbnailLargeFilename = thumbnailLarge.filename;
     }
 
     // Parse content warnings if provided
@@ -599,7 +723,7 @@ app.post('/api/footage/upload', authenticateToken, upload.fields([
     const videoDatePath = req.uploadDatePath || getDateBasedPath();
     const fullVideoFilename = `${videoDatePath}/${finalVideoFilename}`;
 
-    const newFootage = createFootage({
+    const newFootage = await createFootage({
       user_id: req.user.id,
       filename: fullVideoFilename, // Includes date path (e.g., "2026/01/10/video-xxx.mp4")
       filename_compressed: null,
@@ -622,12 +746,85 @@ app.post('/api/footage/upload', authenticateToken, upload.fields([
 
     const newId = newFootage.id;
 
+    // Create ID subfolder for thumbnails and move them there
+    const thumbnailIdDir = path.join(thumbnailDateDir, String(newId));
+    if (!fs.existsSync(thumbnailIdDir)) {
+      fs.mkdirSync(thumbnailIdDir, { recursive: true });
+    }
+
+    // Move thumbnails to ID folder and upload to R2
+    let finalThumbnailSmall = null;
+    let finalThumbnailMedium = null;
+    let finalThumbnailLarge = null;
+
+    if (thumbnailSmallFilename) {
+      const srcPath = path.join(thumbnailDateDir, thumbnailSmallFilename);
+      const destPath = path.join(thumbnailIdDir, thumbnailSmallFilename);
+      fs.renameSync(srcPath, destPath);
+      finalThumbnailSmall = `${thumbnailDatePath}/${newId}/${thumbnailSmallFilename}`;
+
+      if (isCloudStorage()) {
+        await uploadFile(destPath, `thumbnails/${finalThumbnailSmall}`, 'image/jpeg');
+        fs.unlinkSync(destPath);
+      }
+    }
+
+    if (thumbnailMediumFilename) {
+      const srcPath = path.join(thumbnailDateDir, thumbnailMediumFilename);
+      const destPath = path.join(thumbnailIdDir, thumbnailMediumFilename);
+      fs.renameSync(srcPath, destPath);
+      finalThumbnailMedium = `${thumbnailDatePath}/${newId}/${thumbnailMediumFilename}`;
+
+      if (isCloudStorage()) {
+        await uploadFile(destPath, `thumbnails/${finalThumbnailMedium}`, 'image/jpeg');
+        fs.unlinkSync(destPath);
+      }
+    }
+
+    if (thumbnailLargeFilename) {
+      const srcPath = path.join(thumbnailDateDir, thumbnailLargeFilename);
+      const destPath = path.join(thumbnailIdDir, thumbnailLargeFilename);
+      fs.renameSync(srcPath, destPath);
+      finalThumbnailLarge = `${thumbnailDatePath}/${newId}/${thumbnailLargeFilename}`;
+
+      if (isCloudStorage()) {
+        await uploadFile(destPath, `thumbnails/${finalThumbnailLarge}`, 'image/jpeg');
+        fs.unlinkSync(destPath);
+      }
+    }
+
+    // Upload uncompressed video to R2 (in originals folder for Lambda processing)
+    const localVideoPath = path.join(uploadsDir, videoDatePath, finalVideoFilename);
+    const originalR2Key = `originals/${videoDatePath}/${newId}/${finalVideoFilename}`;
+
+    if (isCloudStorage()) {
+      await uploadFile(localVideoPath, originalR2Key, 'video/mp4');
+      fs.unlinkSync(localVideoPath); // Clean up local file after R2 upload
+      logger.info('Original video uploaded to R2', {
+        footageId: newId,
+        r2Key: originalR2Key,
+        operation: 'upload_original_to_r2'
+      });
+    }
+
+    // Update database with final paths including ID folder
+    const finalVideoPath = `${videoDatePath}/${newId}/${finalVideoFilename}`;
+    await updateFootage(newId, {
+      filename: finalVideoPath,
+      filename_original: originalR2Key, // Store original R2 key for Lambda processing
+      thumbnail: finalThumbnailMedium,
+      thumbnail_small: finalThumbnailSmall,
+      thumbnail_medium: finalThumbnailMedium,
+      thumbnail_large: finalThumbnailLarge
+    });
+
     logSuccess('Footage uploaded successfully', {
       footageId: newId,
       filename: finalVideoFilename,
-      thumbnailSmall: thumbnailSmallFilename,
-      thumbnailMedium: thumbnailMediumFilename,
-      thumbnailLarge: thumbnailLargeFilename,
+      originalR2Key: originalR2Key,
+      thumbnailSmall: finalThumbnailSmall,
+      thumbnailMedium: finalThumbnailMedium,
+      thumbnailLarge: finalThumbnailLarge,
       locationName: locationName,
       incidentType: incidentType,
       incidentDate: incidentDate,
@@ -641,14 +838,56 @@ app.post('/api/footage/upload', authenticateToken, upload.fields([
       message: 'Footage uploaded successfully'
     });
 
-    // Trigger video compression asynchronously (don't wait for it)
-    logger.info('Triggering background video compression', {
-      footageId: newId,
-      filename: fullVideoFilename,
-      operation: 'upload_footage'
-    });
+    // Trigger video processing
+    if (isCloudStorage() && isLambdaEnabled()) {
+      // Cloud mode with Lambda - invoke Lambda for processing
+      logger.info('Triggering Lambda for video processing', {
+        footageId: newId,
+        originalR2Key: originalR2Key,
+        operation: 'trigger_lambda'
+      });
 
-    compressVideoBackground(newId, fullVideoFilename);
+      try {
+        await updateFootage(newId, { processing_status: 'processing' });
+
+        await invokeVideoProcessing({
+          footageId: newId,
+          originalR2Key: originalR2Key,
+          outputBasePath: `${videoDatePath}/${newId}`,
+          deleteOriginal: false // Keep original for potential re-processing
+        });
+
+        logger.info('Lambda invoked successfully', {
+          footageId: newId,
+          operation: 'lambda_invoked'
+        });
+      } catch (lambdaError) {
+        logger.error('Failed to invoke Lambda, falling back to local processing', {
+          footageId: newId,
+          error: lambdaError.message,
+          operation: 'lambda_fallback'
+        });
+        // Fall back to local processing on Lambda failure
+        compressVideoBackground(newId, fullVideoFilename);
+      }
+    } else if (isCloudStorage()) {
+      // Cloud mode without Lambda - local processing, upload results to R2
+      logger.info('Lambda not configured, using local processing with R2 upload', {
+        footageId: newId,
+        operation: 'local_processing_r2'
+      });
+      await updateFootage(newId, { processing_status: 'processing' });
+      compressVideoBackground(newId, fullVideoFilename);
+    } else {
+      // Local storage mode - use local processing
+      logger.info('Using local video processing', {
+        footageId: newId,
+        filename: fullVideoFilename,
+        operation: 'local_processing'
+      });
+      await updateFootage(newId, { processing_status: 'processing' });
+      compressVideoBackground(newId, fullVideoFilename);
+    }
   } catch (error) {
     logError('Failed to upload footage', error, {
       videoFilename: req.files?.video?.[0]?.filename,
@@ -692,10 +931,10 @@ app.post('/api/footage/upload', authenticateToken, upload.fields([
 });
 
 // Delete footage (protected route - requires authentication)
-app.delete('/api/footage/:id', authenticateToken, (req, res) => {
+app.delete('/api/footage/:id', authenticateToken, async (req, res) => {
   try {
     const footageId = parseInt(req.params.id);
-    const footageItem = getFootageById(footageId);
+    const footageItem = await getFootageById(footageId);
 
     if (!footageItem) {
       logger.warn('Delete footage failed - not found', {
@@ -750,7 +989,7 @@ app.delete('/api/footage/:id', authenticateToken, (req, res) => {
     });
 
     // Remove from database
-    deleteFootage(footageId);
+    await deleteFootage(footageId);
 
     logSuccess('Footage deleted successfully', {
       footageId,
@@ -775,7 +1014,7 @@ app.delete('/api/footage/:id', authenticateToken, (req, res) => {
 });
 
 // Submit footage request
-app.post('/api/footage/:id/request', (req, res) => {
+app.post('/api/footage/:id/request', async (req, res) => {
   try {
     const { name, email, reason, message } = req.body;
     const footageId = parseInt(req.params.id);
@@ -786,13 +1025,13 @@ app.post('/api/footage/:id/request', (req, res) => {
     }
 
     // Check if footage exists
-    const footageItem = getFootageById(footageId);
+    const footageItem = await getFootageById(footageId);
     if (!footageItem) {
       return res.status(404).json({ error: 'Footage not found' });
     }
 
     // Create new request
-    const newRequest = createRequest({
+    const newRequest = await createRequest({
       footage_id: footageId,
       requester_name: name,
       requester_email: email,
@@ -831,7 +1070,7 @@ app.post('/api/footage/:id/request', (req, res) => {
 });
 
 // Update footage description (moderator/admin only)
-app.patch('/api/footage/:id/description', authenticateToken, (req, res) => {
+app.patch('/api/footage/:id/description', authenticateToken, async (req, res) => {
   try {
     const footageId = parseInt(req.params.id);
     const { description } = req.body;
@@ -850,7 +1089,7 @@ app.patch('/api/footage/:id/description', authenticateToken, (req, res) => {
       return res.status(403).json({ error: 'Moderator or admin privileges required' });
     }
 
-    const footageItem = getFootageById(footageId);
+    const footageItem = await getFootageById(footageId);
 
     if (!footageItem) {
       logger.warn('Update footage failed - not found', {
@@ -862,7 +1101,7 @@ app.patch('/api/footage/:id/description', authenticateToken, (req, res) => {
     }
 
     // Update description
-    updateFootage(footageId, { description: description || null });
+    await updateFootage(footageId, { description: description || null });
 
     logSuccess('Footage description updated', {
       footageId,
@@ -874,7 +1113,7 @@ app.patch('/api/footage/:id/description', authenticateToken, (req, res) => {
     res.json({
       success: true,
       message: 'Description updated successfully',
-      footage: { ...footageItem, description: description || null }
+      footage: transformFootageUrls({ ...footageItem, description: description || null })
     });
   } catch (error) {
     logError('Failed to update footage description', error, {
@@ -888,10 +1127,10 @@ app.patch('/api/footage/:id/description', authenticateToken, (req, res) => {
 });
 
 // Get requests for a footage
-app.get('/api/footage/:id/requests', (req, res) => {
+app.get('/api/footage/:id/requests', async (req, res) => {
   try {
     const footageId = parseInt(req.params.id);
-    const footageRequests = getRequestsByFootageId(footageId);
+    const footageRequests = await getRequestsByFootageId(footageId);
     res.json(footageRequests);
   } catch (error) {
     logError('Failed to fetch footage requests', error, {
@@ -1222,7 +1461,7 @@ app.post('/api/compress-video/:id', async (req, res) => {
 
   try {
     // Get footage metadata
-    const footageItem = getFootageById(footageId);
+    const footageItem = await getFootageById(footageId);
 
     if (!footageItem) {
       logger.warn('Footage not found for compression', {
@@ -1349,8 +1588,9 @@ app.post('/api/compress-video/:id', async (req, res) => {
       const inputStats = fs.statSync(inputPath);
       const outputStats = fs.statSync(outputPath);
 
-      // Update database with compressed filename
-      updateFootage(footageId, { filename_compressed: outputFilename });
+      // Update database with compressed filename (fire-and-forget async)
+      updateFootage(footageId, { filename_compressed: outputFilename }).catch(err =>
+        logger.error('Failed to update footage with compressed filename', { footageId, error: err.message }));
 
       logSuccess('Video compressed successfully', {
         footageId,
@@ -1401,24 +1641,54 @@ app.get('/api/test/ffmpeg', (req, res) => {
   });
 });
 
-// Start server
-app.listen(SERVER_CONFIG.PORT, () => {
-  logger.info('Server started successfully', {
-    port: SERVER_CONFIG.PORT,
-    env: SERVER_CONFIG.NODE_ENV,
-    uploadsDir: uploadsDir,
-    thumbnailsDir: thumbnailsDir,
-    dataDir: dataDir,
-    serverUrl: `http://localhost:${SERVER_CONFIG.PORT}`,
-    apiUrl: `http://localhost:${SERVER_CONFIG.PORT}/api`
-  });
+/**
+ * Start the server with database initialization
+ */
+async function startServer() {
+  try {
+    // Initialize database connection
+    await initializeDatabase();
+    logger.info('Database initialized successfully');
 
-  // Keep user-friendly console output for development
-  console.log(`\n🚗 Dash World Backend Server Running!`);
-  console.log(`📍 API: http://localhost:${SERVER_CONFIG.PORT}/api`);
-  console.log(`💾 Database: ${dataDir}`);
-  console.log(`📂 Uploads: ${uploadsDir}\n`);
-});
+    // Attempt to migrate from JSON if needed (for backward compatibility)
+    try {
+      await migrateFromJson(dataDir);
+    } catch (migrationError) {
+      logger.warn('JSON migration skipped or failed', {
+        error: migrationError.message
+      });
+    }
+
+    // Start HTTP server
+    app.listen(SERVER_CONFIG.PORT, () => {
+      logger.info('Server started successfully', {
+        port: SERVER_CONFIG.PORT,
+        env: SERVER_CONFIG.NODE_ENV,
+        uploadsDir: uploadsDir,
+        thumbnailsDir: thumbnailsDir,
+        dataDir: dataDir,
+        serverUrl: `http://localhost:${SERVER_CONFIG.PORT}`,
+        apiUrl: `http://localhost:${SERVER_CONFIG.PORT}/api`
+      });
+
+      // Keep user-friendly console output for development
+      console.log(`\n🚗 Dash World Backend Server Running!`);
+      console.log(`📍 API: http://localhost:${SERVER_CONFIG.PORT}/api`);
+      console.log(`💾 Database: PostgreSQL`);
+      console.log(`📂 Uploads: ${uploadsDir}\n`);
+    });
+  } catch (error) {
+    logger.error('Failed to start server', {
+      error: error.message,
+      stack: error.stack
+    });
+    console.error('Failed to start server:', error.message);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
 
 // Graceful shutdown
 process.on('SIGINT', () => {

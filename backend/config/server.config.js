@@ -8,16 +8,13 @@ export const SERVER_CONFIG = {
   PORT: parseInt(process.env.PORT) || 5000,
   NODE_ENV: process.env.NODE_ENV || 'development',
 
+  // Database connection
+  DATABASE_URL: process.env.DATABASE_URL,
+
   // Directory paths
   UPLOAD_DIR: process.env.UPLOAD_DIR || '../uploads',
   THUMBNAILS_DIR: process.env.THUMBNAILS_DIR || '../uploads/thumbnails',
   DATA_DIR: process.env.DATA_DIR || './data',
-
-  // Database files
-  FOOTAGE_DB_FILE: 'footage.json',
-  REQUESTS_DB_FILE: 'requests.json',
-  CONVERSATIONS_DB_FILE: 'conversations.json',
-  MESSAGES_DB_FILE: 'messages.json',
 
   // CORS settings - comma-separated list of allowed origins
   // In production, set to your frontend domain(s)

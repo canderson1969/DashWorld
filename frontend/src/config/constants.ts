@@ -105,3 +105,22 @@ export const PRIVACY_NOTICE = {
   UPLOAD_WARNING: 'Uploaded footage will be visible to all users. You may choose to blur license plates and faces if you wish, but this is optional.',
   REQUEST_INFO: 'Submitting a request will notify the uploader. They may contact you directly to share footage or additional details.'
 } as const;
+
+/**
+ * Convert a URL from the API to an absolute URL
+ * Handles both relative paths (local dev) and absolute URLs (R2 production)
+ *
+ * @param url - URL from API response (relative or absolute)
+ * @returns Absolute URL ready for use in the browser
+ */
+export function getAssetUrl(url: string | null | undefined): string {
+  if (!url) return '';
+
+  // If it's already an absolute URL, return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // For relative URLs, prepend the server URL
+  return `${API_CONFIG.SERVER_URL}${url}`;
+}

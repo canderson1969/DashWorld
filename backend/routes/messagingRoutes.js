@@ -5,13 +5,17 @@ import { VALIDATION_RULES } from '../config/server.config.js';
 import {
   getConversationsByUserId,
   getConversationById,
+  getConversationByParticipants,
   createConversation,
   updateConversationLastMessage,
   getMessagesByConversationId,
+  getMessageById,
+  getLastMessage,
+  getMessageCount,
   createMessage,
   markMessagesAsRead,
-  getUnreadCountForUser,
-  getDb
+  markMessageAsRead,
+  getUnreadCountForUser
 } from '../utils/database.js';
 
 const router = express.Router();
@@ -26,7 +30,7 @@ const router = express.Router();
  * - subject: string (optional) - Subject line
  * - initial_message: string (required) - First message body
  */
-router.post('/conversations', authenticateToken, (req, res) => {
+router.post('/conversations', authenticateToken, async (req, res) => {
   const { footage_id, recipient_id, subject, initial_message } = req.body;
   const sender_id = req.user.id;
 
@@ -56,19 +60,12 @@ router.post('/conversations', authenticateToken, (req, res) => {
   }
 
   try {
-    const db = getDb();
-
     // Check if conversation already exists between these users for this footage
-    const existingConvStmt = db.prepare(`
-      SELECT * FROM conversations
-      WHERE footage_id = ?
-      AND ((participant1_id = ? AND participant2_id = ?) OR (participant1_id = ? AND participant2_id = ?))
-    `);
-    let conversation = existingConvStmt.get(footage_id, sender_id, recipient_id, recipient_id, sender_id);
+    let conversation = await getConversationByParticipants(footage_id, sender_id, recipient_id);
 
     if (!conversation) {
       // Create new conversation
-      conversation = createConversation({
+      conversation = await createConversation({
         footage_id: footage_id || null,
         participant1_id: sender_id,
         participant2_id: recipient_id,
@@ -85,7 +82,7 @@ router.post('/conversations', authenticateToken, (req, res) => {
     }
 
     // Create the initial message
-    const message = createMessage({
+    const message = await createMessage({
       conversation_id: conversation.id,
       sender_id,
       message_body: initial_message,
@@ -118,7 +115,7 @@ router.post('/conversations', authenticateToken, (req, res) => {
  * GET /api/conversations
  * Get all conversations for the current user
  */
-router.get('/conversations', authenticateToken, (req, res) => {
+router.get('/conversations', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   logger.info('Fetching conversations', {
@@ -127,33 +124,26 @@ router.get('/conversations', authenticateToken, (req, res) => {
   });
 
   try {
-    const conversations = getConversationsByUserId(userId);
+    const conversations = await getConversationsByUserId(userId);
 
     // Sort by most recent message
     conversations.sort((a, b) =>
       new Date(b.last_message_at) - new Date(a.last_message_at)
     );
 
-    // Get last message for each conversation
-    const db = getDb();
-    const enrichedConversations = conversations.map(conv => {
-      const lastMessageStmt = db.prepare(`
-        SELECT * FROM messages
-        WHERE conversation_id = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `);
-      const lastMessage = lastMessageStmt.get(conv.id);
+    // Get last message and message count for each conversation
+    const enrichedConversations = await Promise.all(
+      conversations.map(async (conv) => {
+        const lastMessage = await getLastMessage(conv.id);
+        const messageCount = await getMessageCount(conv.id);
 
-      const messageCountStmt = db.prepare('SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?');
-      const messageCount = messageCountStmt.get(conv.id).count;
-
-      return {
-        ...conv,
-        last_message: lastMessage || null,
-        message_count: messageCount
-      };
-    });
+        return {
+          ...conv,
+          last_message: lastMessage || null,
+          message_count: messageCount
+        };
+      })
+    );
 
     logger.info('Conversations fetched', {
       user_id: userId,
@@ -175,7 +165,7 @@ router.get('/conversations', authenticateToken, (req, res) => {
  * GET /api/conversations/:id/messages
  * Get all messages in a conversation
  */
-router.get('/conversations/:id/messages', authenticateToken, (req, res) => {
+router.get('/conversations/:id/messages', authenticateToken, async (req, res) => {
   const conversationId = parseInt(req.params.id);
   const userId = req.user.id;
 
@@ -187,7 +177,7 @@ router.get('/conversations/:id/messages', authenticateToken, (req, res) => {
 
   try {
     // Find conversation
-    const conversation = getConversationById(conversationId);
+    const conversation = await getConversationById(conversationId);
 
     if (!conversation) {
       logger.warn('Conversation not found', {
@@ -207,7 +197,7 @@ router.get('/conversations/:id/messages', authenticateToken, (req, res) => {
     }
 
     // Get messages for this conversation
-    const conversationMessages = getMessagesByConversationId(conversationId);
+    const conversationMessages = await getMessagesByConversationId(conversationId);
 
     logger.info('Messages fetched', {
       conversation_id: conversationId,
@@ -235,7 +225,7 @@ router.get('/conversations/:id/messages', authenticateToken, (req, res) => {
  * - conversation_id: number (required)
  * - message_body: string (required)
  */
-router.post('/messages', authenticateToken, (req, res) => {
+router.post('/messages', authenticateToken, async (req, res) => {
   const { conversation_id, message_body } = req.body;
   const sender_id = req.user.id;
 
@@ -261,7 +251,7 @@ router.post('/messages', authenticateToken, (req, res) => {
 
   try {
     // Find conversation
-    const conversation = getConversationById(conversation_id);
+    const conversation = await getConversationById(conversation_id);
 
     if (!conversation) {
       logger.warn('Conversation not found', {
@@ -281,7 +271,7 @@ router.post('/messages', authenticateToken, (req, res) => {
     }
 
     // Create message
-    const message = createMessage({
+    const message = await createMessage({
       conversation_id,
       sender_id,
       message_body,
@@ -311,7 +301,7 @@ router.post('/messages', authenticateToken, (req, res) => {
  * PATCH /api/messages/:id/read
  * Mark a message as read
  */
-router.patch('/messages/:id/read', authenticateToken, (req, res) => {
+router.patch('/messages/:id/read', authenticateToken, async (req, res) => {
   const messageId = parseInt(req.params.id);
   const userId = req.user.id;
 
@@ -322,11 +312,8 @@ router.patch('/messages/:id/read', authenticateToken, (req, res) => {
   });
 
   try {
-    const db = getDb();
-
     // Find message
-    const messageStmt = db.prepare('SELECT * FROM messages WHERE id = ?');
-    const message = messageStmt.get(messageId);
+    const message = await getMessageById(messageId);
 
     if (!message) {
       logger.warn('Message not found', {
@@ -337,7 +324,7 @@ router.patch('/messages/:id/read', authenticateToken, (req, res) => {
     }
 
     // Find conversation to verify user is recipient
-    const conversation = getConversationById(message.conversation_id);
+    const conversation = await getConversationById(message.conversation_id);
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
@@ -362,8 +349,7 @@ router.patch('/messages/:id/read', authenticateToken, (req, res) => {
     }
 
     // Mark as read
-    const updateStmt = db.prepare('UPDATE messages SET is_read = 1 WHERE id = ?');
-    updateStmt.run(messageId);
+    await markMessageAsRead(messageId);
 
     logger.info('Message marked as read', {
       message_id: messageId,
@@ -386,7 +372,7 @@ router.patch('/messages/:id/read', authenticateToken, (req, res) => {
  * PATCH /api/conversations/:id/read-all
  * Mark all messages in a conversation as read
  */
-router.patch('/conversations/:id/read-all', authenticateToken, (req, res) => {
+router.patch('/conversations/:id/read-all', authenticateToken, async (req, res) => {
   const conversationId = parseInt(req.params.id);
   const userId = req.user.id;
 
@@ -398,7 +384,7 @@ router.patch('/conversations/:id/read-all', authenticateToken, (req, res) => {
 
   try {
     // Find conversation
-    const conversation = getConversationById(conversationId);
+    const conversation = await getConversationById(conversationId);
 
     if (!conversation) {
       logger.warn('Conversation not found', {
@@ -418,7 +404,7 @@ router.patch('/conversations/:id/read-all', authenticateToken, (req, res) => {
     }
 
     // Mark all messages from other user as read
-    const markedCount = markMessagesAsRead(conversationId, userId);
+    const markedCount = await markMessagesAsRead(conversationId, userId);
 
     logger.info('All conversation messages marked as read', {
       conversation_id: conversationId,
@@ -442,11 +428,11 @@ router.patch('/conversations/:id/read-all', authenticateToken, (req, res) => {
  * GET /api/messages/unread-count
  * Get total unread message count for current user
  */
-router.get('/messages/unread-count', authenticateToken, (req, res) => {
+router.get('/messages/unread-count', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const unreadCount = getUnreadCountForUser(userId);
+    const unreadCount = await getUnreadCountForUser(userId);
     res.json({ unread_count: unreadCount });
   } catch (error) {
     logger.error('Failed to get unread count', {

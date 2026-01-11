@@ -7,7 +7,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Check, Clock, Loader, MapPin, Calendar, AlertCircle } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
+import { API_CONFIG, getAssetUrl } from '../../config/constants';
 import { ProgressiveImage } from '../ProgressiveImage';
 import { formatIncidentType, formatTimeTo12Hour } from '../../utils/timeFormat';
 import type { Footage } from '../../api';
@@ -262,8 +262,8 @@ export function ProcessingPage({
             {/* Thumbnail Preview - Flexible height */}
             <div className="flex-1 min-h-0 mb-4 rounded-lg overflow-hidden bg-gray-900">
               <ProgressiveImage
-                smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${thumbnail}`}
-                mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${thumbnail}`}
+                smallSrc={getAssetUrl(thumbnail)}
+                mediumSrc={getAssetUrl(thumbnail)}
                 alt="Video thumbnail"
                 className="w-full h-full object-contain"
               />

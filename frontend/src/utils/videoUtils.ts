@@ -1,6 +1,6 @@
 import { logger } from './logger';
 import { VideoTrimmingError, ThumbnailGenerationError } from './errors';
-import { API_CONFIG } from '../config/constants';
+import { API_CONFIG, getAssetUrl } from '../config/constants';
 
 /**
  * Generate thumbnail images from video at regular intervals
@@ -182,7 +182,8 @@ export async function trimVideo(videoFile: File, startTime: number, endTime: num
     });
 
     // Fetch the trimmed video file
-    const videoResponse = await fetch(`${API_CONFIG.SERVER_URL}/uploads/${result.filename}`);
+    const videoUrl = result.video_url || `/uploads/${result.filename}`;
+    const videoResponse = await fetch(getAssetUrl(videoUrl));
 
     if (!videoResponse.ok) {
       const error = new VideoTrimmingError(

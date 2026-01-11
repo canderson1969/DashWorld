@@ -8,7 +8,7 @@
  */
 
 import { Calendar, Clock, Play, AlertTriangle, Trash2 } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
+import { getAssetUrl } from '../../config/constants';
 import { formatTimeTo12Hour, formatDuration, formatIncidentType } from '../../utils/timeFormat';
 import { ProgressiveImage } from '../ProgressiveImage';
 import type { FootageItem } from '../../types';
@@ -63,9 +63,9 @@ export function BrowseView({
                 {footage.thumbnail ? (
                   <>
                     <ProgressiveImage
-                      smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_small || footage.thumbnail}`}
-                      mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_medium || footage.thumbnail}`}
-                      largeSrc={footage.thumbnail_large ? `${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_large}` : undefined}
+                      smallSrc={getAssetUrl(footage.thumbnail_url_small || footage.thumbnail_url)}
+                      mediumSrc={getAssetUrl(footage.thumbnail_url_medium || footage.thumbnail_url)}
+                      largeSrc={footage.thumbnail_url_large ? getAssetUrl(footage.thumbnail_url_large) : undefined}
                       alt={footage.type}
                       className="w-full h-full object-cover"
                       shouldBlur={footage.is_graphic_content}
@@ -89,9 +89,9 @@ export function BrowseView({
                         <Play size={48} className="text-white" />
                       </div>
                     )}
-                    {footage.filename && !footage.is_graphic_content && (
+                    {footage.video_url && !footage.is_graphic_content && (
                       <video
-                        src={`${API_CONFIG.SERVER_URL}/uploads/${footage.filename}`}
+                        src={getAssetUrl(footage.video_url)}
                         className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                         muted
                         loop

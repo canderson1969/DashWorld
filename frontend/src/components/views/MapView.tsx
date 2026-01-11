@@ -9,7 +9,7 @@
 
 import { RefObject, MutableRefObject } from 'react';
 import { Search, Clock, Info, Calendar, Play, AlertTriangle, MapPin } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
+import { getAssetUrl } from '../../config/constants';
 import { formatTimeTo12Hour, formatDuration, formatIncidentType } from '../../utils/timeFormat';
 import { ProgressiveImage } from '../ProgressiveImage';
 import { Loader } from '../shared/Loader';
@@ -284,9 +284,9 @@ export function MapView({
             {selectedPin.thumbnail ? (
               <>
                 <ProgressiveImage
-                  smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${selectedPin.thumbnail_small || selectedPin.thumbnail}`}
-                  mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${selectedPin.thumbnail_medium || selectedPin.thumbnail}`}
-                  largeSrc={selectedPin.thumbnail_large ? `${API_CONFIG.SERVER_URL}/uploads/thumbnails/${selectedPin.thumbnail_large}` : undefined}
+                  smallSrc={getAssetUrl(selectedPin.thumbnail_url_small || selectedPin.thumbnail_url)}
+                  mediumSrc={getAssetUrl(selectedPin.thumbnail_url_medium || selectedPin.thumbnail_url)}
+                  largeSrc={selectedPin.thumbnail_url_large ? getAssetUrl(selectedPin.thumbnail_url_large) : undefined}
                   alt={selectedPin.type}
                   className="w-full h-full object-cover"
                   shouldBlur={selectedPin.is_graphic_content}
@@ -306,9 +306,9 @@ export function MapView({
                     <Play size={48} className="text-white" />
                   </div>
                 )}
-                {selectedPin.filename && !selectedPin.is_graphic_content && (
+                {selectedPin.video_url && !selectedPin.is_graphic_content && (
                   <video
-                    src={`${API_CONFIG.SERVER_URL}/uploads/${selectedPin.filename}`}
+                    src={getAssetUrl(selectedPin.video_url)}
                     className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                     muted
                     loop

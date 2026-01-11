@@ -34,6 +34,17 @@ export interface FootageItem {
   is_graphic_content?: boolean;
   content_warnings?: string[] | null;
   created_at?: string;
+  // URL fields (populated by backend transformFootageUrls)
+  video_url?: string | null;
+  video_url_240p?: string | null;
+  video_url_360p?: string | null;
+  video_url_480p?: string | null;
+  video_url_720p?: string | null;
+  video_url_1080p?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_url_small?: string | null;
+  thumbnail_url_medium?: string | null;
+  thumbnail_url_large?: string | null;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapPin, Calendar, Clock, Search, Grid, Map, Play, Upload, Info, AlertCircle, Check, User, LogOut, UserCircle, Moon, Sun, AlertTriangle, Inbox } from 'lucide-react';
 import * as api from './api';
-import { API_CONFIG, UI_CONSTANTS, MAP_CONFIG } from './config/constants';
+import { UI_CONSTANTS, MAP_CONFIG, getAssetUrl } from './config/constants';
 import { formatTimeTo12Hour, formatDuration, formatIncidentType } from './utils/timeFormat';
 import { GlobalErrorToast } from './components/ErrorDisplay';
 import { ProgressiveImage } from './components/ProgressiveImage';
@@ -204,7 +204,18 @@ const DashWorld = () => {
         duration: item.duration,
         is_graphic_content: (item as any).is_graphic_content || false,
         content_warnings: (item as any).content_warnings || null,
-        created_at: item.created_at
+        created_at: item.created_at,
+        // URL fields from backend
+        video_url: (item as any).video_url,
+        video_url_240p: (item as any).video_url_240p,
+        video_url_360p: (item as any).video_url_360p,
+        video_url_480p: (item as any).video_url_480p,
+        video_url_720p: (item as any).video_url_720p,
+        video_url_1080p: (item as any).video_url_1080p,
+        thumbnail_url: (item as any).thumbnail_url,
+        thumbnail_url_small: (item as any).thumbnail_url_small,
+        thumbnail_url_medium: (item as any).thumbnail_url_medium,
+        thumbnail_url_large: (item as any).thumbnail_url_large
       }));
       setFootageData(transformedData);
       setVisibleFootage(transformedData);
@@ -785,7 +796,7 @@ ${requestFormData.message ? `Message:\n${requestFormData.message}` : ''}`;
                             <div className="aspect-video relative bg-gray-800">
                               {footage.thumbnail ? (
                                 <>
-                                  <ProgressiveImage smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_small || footage.thumbnail}`} mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_medium || footage.thumbnail}`} alt={footage.type} className="w-full h-full object-cover" shouldBlur={footage.is_graphic_content} />
+                                  <ProgressiveImage smallSrc={getAssetUrl(footage.thumbnail_url_small || footage.thumbnail_url)} mediumSrc={getAssetUrl(footage.thumbnail_url_medium || footage.thumbnail_url)} alt={footage.type} className="w-full h-full object-cover" shouldBlur={footage.is_graphic_content} />
                                   {footage.duration && <div className="absolute bottom-1 right-1 bg-black/80 text-white px-1.5 py-0.5 rounded text-xs font-semibold">{formatDuration(footage.duration)}</div>}
                                   {footage.is_graphic_content && <div className="absolute top-1 right-1 bg-orange-500 text-white px-1 py-0.5 rounded text-xs font-bold"><AlertTriangle size={10} className="inline" /></div>}
                                 </>
@@ -827,7 +838,7 @@ ${requestFormData.message ? `Message:\n${requestFormData.message}` : ''}`;
               const uploadedFootage = allFootage.find((f: any) => f.id === footageId);
               if (uploadedFootage) {
                 setProcessingFootageId(footageId);
-                setProcessingThumbnail(uploadedFootage.thumbnail_medium || uploadedFootage.thumbnail);
+                setProcessingThumbnail(uploadedFootage.thumbnail_url_medium || uploadedFootage.thumbnail_url || null);
                 setPage('processing');
               } else {
                 setPage('browse');
@@ -844,7 +855,9 @@ ${requestFormData.message ? `Message:\n${requestFormData.message}` : ''}`;
               const footage = allFootage.find((f: any) => f.id === processingFootageId);
               if (footage) {
                 const footageItem: FootageItem = {
-                  id: footage.id, user_id: footage.user_id, lat: footage.lat, lng: footage.lng, location: footage.location_name, date: footage.incident_date, time: footage.incident_time, type: footage.incident_type, emoji: UI_CONSTANTS.INCIDENT_EMOJIS[footage.id % UI_CONSTANTS.INCIDENT_EMOJIS.length], thumbnail: footage.thumbnail, thumbnail_small: footage.thumbnail_small, thumbnail_medium: footage.thumbnail_medium, thumbnail_large: footage.thumbnail_large, description: footage.description, filename: footage.filename, filename_compressed: footage.filename_compressed, filename_240p: footage.filename_240p, filename_360p: footage.filename_360p, filename_480p: footage.filename_480p, filename_720p: footage.filename_720p, filename_1080p: footage.filename_1080p, duration: footage.duration, is_graphic_content: footage.is_graphic_content || false, content_warnings: footage.content_warnings || null, created_at: footage.created_at
+                  id: footage.id, user_id: footage.user_id, lat: footage.lat, lng: footage.lng, location: footage.location_name, date: footage.incident_date, time: footage.incident_time, type: footage.incident_type, emoji: UI_CONSTANTS.INCIDENT_EMOJIS[footage.id % UI_CONSTANTS.INCIDENT_EMOJIS.length], thumbnail: footage.thumbnail, thumbnail_small: footage.thumbnail_small, thumbnail_medium: footage.thumbnail_medium, thumbnail_large: footage.thumbnail_large, description: footage.description, filename: footage.filename, filename_compressed: footage.filename_compressed, filename_240p: footage.filename_240p, filename_360p: footage.filename_360p, filename_480p: footage.filename_480p, filename_720p: footage.filename_720p, filename_1080p: footage.filename_1080p, duration: footage.duration, is_graphic_content: footage.is_graphic_content || false, content_warnings: footage.content_warnings || null, created_at: footage.created_at,
+                  video_url: footage.video_url, video_url_240p: footage.video_url_240p, video_url_360p: footage.video_url_360p, video_url_480p: footage.video_url_480p, video_url_720p: footage.video_url_720p, video_url_1080p: footage.video_url_1080p,
+                  thumbnail_url: footage.thumbnail_url, thumbnail_url_small: footage.thumbnail_url_small, thumbnail_url_medium: footage.thumbnail_url_medium, thumbnail_url_large: footage.thumbnail_url_large
                 };
                 setSelectedPin(footageItem);
                 setPage('video-detail');

@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, Filter, Search, Play, AlertTriangle } from 'lucide-react';
-import { API_CONFIG } from '../../config/constants';
+import { getAssetUrl } from '../../config/constants';
 import { formatTimeTo12Hour, formatDuration, formatIncidentType } from '../../utils/timeFormat';
 import { ProgressiveImage } from '../ProgressiveImage';
 import { Loader } from '../shared/Loader';
@@ -462,9 +462,9 @@ export function SearchPage({ footageData, onBack, onSelectFootage, onShowContent
                     {footage.thumbnail ? (
                       <>
                         <ProgressiveImage
-                          smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_small || footage.thumbnail}`}
-                          mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_medium || footage.thumbnail}`}
-                          largeSrc={footage.thumbnail_large ? `${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_large}` : undefined}
+                          smallSrc={getAssetUrl(footage.thumbnail_url_small || footage.thumbnail_url)}
+                          mediumSrc={getAssetUrl(footage.thumbnail_url_medium || footage.thumbnail_url)}
+                          largeSrc={footage.thumbnail_url_large ? getAssetUrl(footage.thumbnail_url_large) : undefined}
                           alt={footage.type}
                           className="w-full h-full object-cover"
                           shouldBlur={footage.is_graphic_content}

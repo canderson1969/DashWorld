@@ -1,0 +1,16 @@
+{
+  "name": "dashworld-video-processor",
+  "version": "1.0.0",
+  "description": "AWS Lambda function for video processing with FFmpeg",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "package": "zip -r function.zip index.mjs package.json node_modules"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.400.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

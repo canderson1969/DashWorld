@@ -23,7 +23,7 @@ import {
 import type { FootageItem } from '../../types';
 import type { User } from '../../api';
 import * as api from '../../api';
-import { API_CONFIG } from '../../config/constants';
+import { API_CONFIG, getAssetUrl } from '../../config/constants';
 import { formatIncidentType, formatTimeTo12Hour, formatDuration } from '../../utils/timeFormat';
 import { calculateDistance } from '../../utils/distanceCalculator';
 import { ProgressiveImage } from '../ProgressiveImage';
@@ -108,8 +108,8 @@ function NearbyFootageSidebar({ currentFootage, allFootage, onSelectFootage }: N
                 {footage.thumbnail ? (
                   <>
                     <ProgressiveImage
-                      smallSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_small || footage.thumbnail}`}
-                      mediumSrc={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail_medium || footage.thumbnail}`}
+                      smallSrc={getAssetUrl(footage.thumbnail_url_small || footage.thumbnail_url)}
+                      mediumSrc={getAssetUrl(footage.thumbnail_url_medium || footage.thumbnail_url)}
                       alt={footage.type}
                       className="w-full h-full object-cover"
                       shouldBlur={footage.is_graphic_content}
@@ -196,11 +196,11 @@ export function VideoDetailPage({
   useEffect(() => {
     if (footage) {
       setLocalQualitySources({
-        '240p': footage.filename_240p ? `${API_CONFIG.SERVER_URL}/uploads/${footage.filename_240p}` : undefined,
-        '360p': footage.filename_360p ? `${API_CONFIG.SERVER_URL}/uploads/${footage.filename_360p}` : undefined,
-        '480p': footage.filename_480p ? `${API_CONFIG.SERVER_URL}/uploads/${footage.filename_480p}` : undefined,
-        '720p': footage.filename_720p ? `${API_CONFIG.SERVER_URL}/uploads/${footage.filename_720p}` : undefined,
-        '1080p': footage.filename_1080p ? `${API_CONFIG.SERVER_URL}/uploads/${footage.filename_1080p}` : undefined,
+        '240p': footage.video_url_240p ? getAssetUrl(footage.video_url_240p) : undefined,
+        '360p': footage.video_url_360p ? getAssetUrl(footage.video_url_360p) : undefined,
+        '480p': footage.video_url_480p ? getAssetUrl(footage.video_url_480p) : undefined,
+        '720p': footage.video_url_720p ? getAssetUrl(footage.video_url_720p) : undefined,
+        '1080p': footage.video_url_1080p ? getAssetUrl(footage.video_url_1080p) : undefined,
       });
     }
   }, [footage?.id]);
@@ -253,11 +253,11 @@ export function VideoDetailPage({
 
         // Update local quality sources with newly available qualities
         setLocalQualitySources({
-          '240p': updatedFootage.filename_240p ? `${API_CONFIG.SERVER_URL}/uploads/${updatedFootage.filename_240p}` : undefined,
-          '360p': updatedFootage.filename_360p ? `${API_CONFIG.SERVER_URL}/uploads/${updatedFootage.filename_360p}` : undefined,
-          '480p': updatedFootage.filename_480p ? `${API_CONFIG.SERVER_URL}/uploads/${updatedFootage.filename_480p}` : undefined,
-          '720p': updatedFootage.filename_720p ? `${API_CONFIG.SERVER_URL}/uploads/${updatedFootage.filename_720p}` : undefined,
-          '1080p': updatedFootage.filename_1080p ? `${API_CONFIG.SERVER_URL}/uploads/${updatedFootage.filename_1080p}` : undefined,
+          '240p': updatedFootage.video_url_240p ? getAssetUrl(updatedFootage.video_url_240p) : undefined,
+          '360p': updatedFootage.video_url_360p ? getAssetUrl(updatedFootage.video_url_360p) : undefined,
+          '480p': updatedFootage.video_url_480p ? getAssetUrl(updatedFootage.video_url_480p) : undefined,
+          '720p': updatedFootage.video_url_720p ? getAssetUrl(updatedFootage.video_url_720p) : undefined,
+          '1080p': updatedFootage.video_url_1080p ? getAssetUrl(updatedFootage.video_url_1080p) : undefined,
         });
 
         // If all qualities are complete, stop polling and update footage data
@@ -347,9 +347,9 @@ export function VideoDetailPage({
           <div className="w-full">
             {footage.is_graphic_content && !hasAcknowledgedWarning ? (
                 <div className="w-full aspect-video relative bg-gray-900 rounded-xl overflow-hidden">
-                  {footage.thumbnail && (
+                  {footage.thumbnail_url && (
                     <img
-                      src={`${API_CONFIG.SERVER_URL}/uploads/thumbnails/${footage.thumbnail}`}
+                      src={getAssetUrl(footage.thumbnail_url)}
                       alt="Video thumbnail"
                       className="w-full h-full object-cover blur-2xl"
                     />
@@ -398,7 +398,7 @@ export function VideoDetailPage({
                     </div>
                   </div>
                 </div>
-              ) : footage.filename ? (
+              ) : footage.video_url ? (
                 <Suspense fallback={
                   <div className="w-full aspect-video flex items-center justify-center bg-gray-900 rounded-xl">
                     <div className="text-center">
@@ -408,14 +408,14 @@ export function VideoDetailPage({
                   </div>
                 }>
                   <AdvancedVideoPlayer
-                    src={`${API_CONFIG.SERVER_URL}/uploads/${
-                      footage.filename_720p ||
-                      footage.filename_480p ||
-                      footage.filename_1080p ||
-                      footage.filename_360p ||
-                      footage.filename_240p ||
-                      footage.filename
-                    }`}
+                    src={getAssetUrl(
+                      footage.video_url_720p ||
+                      footage.video_url_480p ||
+                      footage.video_url_1080p ||
+                      footage.video_url_360p ||
+                      footage.video_url_240p ||
+                      footage.video_url
+                    )}
                     autoplay={false}
                     qualitySources={localQualitySources}
                     processingQualities={processingQualities}
@@ -498,7 +498,7 @@ export function VideoDetailPage({
                 Share
               </button>
               <a
-                href={`${API_CONFIG.SERVER_URL}/uploads/${footage.filename}`}
+                href={getAssetUrl(footage.video_url)}
                 download
                 className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5 transition"
               >

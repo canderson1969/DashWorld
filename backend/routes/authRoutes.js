@@ -1,6 +1,7 @@
 import express from 'express';
 import { hashPassword, comparePassword, generateToken, authenticateToken } from '../utils/auth.js';
 import { logger, logSuccess, logError } from '../utils/logger.js';
+import { registrationLimiter, loginLimiter, passwordLimiter } from '../utils/rateLimiter.js';
 import {
   getAllUsers,
   getUserById,
@@ -14,8 +15,9 @@ const router = express.Router();
 
 /**
  * POST /api/auth/register - Register new user
+ * Rate limited: 5 registrations per IP per hour
  */
-router.post('/register', async (req, res) => {
+router.post('/register', registrationLimiter, async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
@@ -36,8 +38,8 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user already exists
-    const existingEmail = getUserByEmail(email);
-    const existingUsername = getUserByUsername(username);
+    const existingEmail = await getUserByEmail(email);
+    const existingUsername = await getUserByUsername(username);
 
     if (existingEmail || existingUsername) {
       logger.warn('Registration failed - user already exists', {
@@ -52,7 +54,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await hashPassword(password);
 
     // Create new user
-    const newUser = createUser({
+    const newUser = await createUser({
       username,
       email,
       password: passwordHash,
@@ -93,8 +95,9 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login - Login user
+ * Rate limited: 10 attempts per IP per 15 minutes
  */
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, username, password } = req.body;
     const identifier = email || username;
@@ -105,9 +108,9 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email or username
-    let user = getUserByEmail(identifier);
+    let user = await getUserByEmail(identifier);
     if (!user) {
-      user = getUserByUsername(identifier);
+      user = await getUserByUsername(identifier);
     }
 
     if (!user) {
@@ -165,9 +168,9 @@ router.post('/login', async (req, res) => {
  * GET /api/auth/me - Get current user info
  * Requires authentication
  */
-router.get('/me', authenticateToken, (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = getUserById(req.user.id);
+    const user = await getUserById(req.user.id);
 
     if (!user) {
       logger.warn('User not found for authenticated request', {
@@ -218,7 +221,7 @@ router.patch('/me', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'At least one field (username or email) is required' });
     }
 
-    const user = getUserById(userId);
+    const user = await getUserById(userId);
 
     if (!user) {
       logger.warn('User not found for profile update', {
@@ -236,7 +239,7 @@ router.patch('/me', authenticateToken, async (req, res) => {
       }
 
       // Check if email is already taken by another user
-      const existingEmail = getUserByEmail(email);
+      const existingEmail = await getUserByEmail(email);
       if (existingEmail && existingEmail.id !== userId) {
         logger.warn('Email already in use', {
           userId,
@@ -249,7 +252,7 @@ router.patch('/me', authenticateToken, async (req, res) => {
 
     // Check if username is already taken by another user
     if (username) {
-      const existingUsername = getUserByUsername(username);
+      const existingUsername = await getUserByUsername(username);
       if (existingUsername && existingUsername.id !== userId) {
         logger.warn('Username already in use', {
           userId,
@@ -265,9 +268,9 @@ router.patch('/me', authenticateToken, async (req, res) => {
     if (username) updates.username = username;
     if (email) updates.email = email;
 
-    updateUser(userId, updates);
+    await updateUser(userId, updates);
 
-    const updatedUser = getUserById(userId);
+    const updatedUser = await getUserById(userId);
 
     logSuccess('User profile updated', {
       userId,
@@ -299,12 +302,13 @@ router.patch('/me', authenticateToken, async (req, res) => {
 /**
  * PATCH /api/auth/me/password - Change password
  * Requires authentication
+ * Rate limited: 5 attempts per IP per hour
  *
  * Request body:
  * - current_password: string (required) - Current password for verification
  * - new_password: string (required) - New password (minimum 6 characters)
  */
-router.patch('/me/password', authenticateToken, async (req, res) => {
+router.patch('/me/password', passwordLimiter, authenticateToken, async (req, res) => {
   try {
     const { current_password, new_password } = req.body;
     const userId = req.user.id;
@@ -319,7 +323,7 @@ router.patch('/me/password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'New password must be at least 6 characters long' });
     }
 
-    const user = getUserById(userId);
+    const user = await getUserById(userId);
 
     if (!user) {
       logger.warn('User not found for password change', {
@@ -344,7 +348,7 @@ router.patch('/me/password', authenticateToken, async (req, res) => {
     const newPasswordHash = await hashPassword(new_password);
 
     // Update password
-    updateUser(userId, { password: newPasswordHash });
+    await updateUser(userId, { password: newPasswordHash });
 
     logSuccess('Password changed successfully', {
       userId,
@@ -381,7 +385,7 @@ router.delete('/me', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Password confirmation is required' });
     }
 
-    const user = getUserById(userId);
+    const user = await getUserById(userId);
 
     if (!user) {
       logger.warn('User not found for account deletion', {
