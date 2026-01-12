@@ -50,7 +50,9 @@
       "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" add backend/ lambda/ frontend/src/)",
       "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" status --short)",
       "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" commit -m \"$\\(cat <<''EOF''\nAdd R2 cloud storage and AWS Lambda video processing\n\n- Add Cloudflare R2 integration for video/thumbnail storage\n- Add AWS Lambda function for serverless video compression\n- Organize uploads by date and footage ID folders\n- Add rate limiting for API endpoints\n- Add processing status tracking in database\n- Update frontend to use URL-based asset loading\n- Add webhook endpoint for Lambda completion callbacks\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" push origin dev)"
+      "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" push origin dev)",
+      "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" add backend/package.json backend/server.js)",
+      "Bash(git -C \"C:\\\\codeprojects\\\\DashWorld\" commit -m \"$\\(cat <<''EOF''\nFix Railway deployment issues\n\n- Add build script to package.json\n- Clean up debug code in server.js\n- Use consistent PORT variable\n- Add health check endpoints\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
