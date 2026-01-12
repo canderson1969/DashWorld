@@ -50,7 +50,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Use Railway's injected PORT, fallback to 5000 for local dev
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5000;
 
 
 // Bind to 0.0.0.0 so the container can expose it
