@@ -52,6 +52,10 @@ const app = express();
 // Use Railway's injected PORT, fallback to 5000 for local dev
 const PORT = process.env.PORT || 5000;
 
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 
 // Bind to 0.0.0.0 so the container can expose it
 app.listen(PORT, '0.0.0.0', () => {
