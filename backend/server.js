@@ -49,10 +49,15 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-const PORT = process.env.PORT; // NO fallback
-app.get('/', (req, res) => res.send('Hello Railway!'));
+// Use Railway's injected PORT, fallback to 5000 for local dev
+const PORT = process.env.PORT || 5000;
 
-app.listen(SERVER_CONFIG.PORT, '0.0.0.0', () => {
+console.log('PORT:', process.env.PORT);
+
+app.get('/', (req, res) => res.send('Hello World!'));
+
+// Bind to all interfaces
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
@@ -1667,7 +1672,7 @@ async function startServer() {
     }
 
     // Start HTTP server
-   /* app.listen(SERVER_CONFIG.PORT, () => {
+    app.listen(SERVER_CONFIG.PORT, () => {
       logger.info('Server started successfully', {
         port: SERVER_CONFIG.PORT,
         env: SERVER_CONFIG.NODE_ENV,
@@ -1683,7 +1688,7 @@ async function startServer() {
       console.log(`📍 API: http://localhost:${SERVER_CONFIG.PORT}/api`);
       console.log(`💾 Database: PostgreSQL`);
       console.log(`📂 Uploads: ${uploadsDir}\n`);
-    });*/
+    });
   } catch (error) {
     logger.error('Failed to start server', {
       error: error.message,
