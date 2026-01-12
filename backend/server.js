@@ -52,7 +52,7 @@ const app = express();
 const PORT = process.env.PORT; // NO fallback
 app.get('/', (req, res) => res.send('Hello Railway!'));
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(SERVER_CONFIG.PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
