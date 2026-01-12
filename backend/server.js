@@ -47,16 +47,14 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const express = require('express');
 const app = express();
 
-const PORT = process.env.PORT || 5000; // NO fallback
+const PORT = process.env.PORT; // NO fallback
 app.get('/', (req, res) => res.send('Hello Railway!'));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
-
 // CORS configuration with origin validation
 const corsOptions = {
   origin: (origin, callback) => {
