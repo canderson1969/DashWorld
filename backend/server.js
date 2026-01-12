@@ -51,7 +51,7 @@ const app = express();
 
 // Use Railway's injected PORT, fallback to 5000 for local dev
 const PORT = process.env.PORT || 5000;
-print(PORT)
+console.log(PORT)
 
 app.get('/', (req, res) => res.send('Hello World!'));
 
