@@ -1,0 +1,9 @@
+# Lambda deployment artifacts
+function.zip
+layer/
+node_modules/
+
+# FFmpeg binaries (too large for git)
+*.tar.xz
+ffmpeg
+ffprobe
