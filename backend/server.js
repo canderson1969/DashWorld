@@ -55,6 +55,7 @@ app.get('/', (req, res) => res.send('Hello Railway!'));
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 // CORS configuration with origin validation
 const corsOptions = {
   origin: (origin, callback) => {
@@ -1666,7 +1667,7 @@ async function startServer() {
     }
 
     // Start HTTP server
-    app.listen(SERVER_CONFIG.PORT, () => {
+   /* app.listen(SERVER_CONFIG.PORT, () => {
       logger.info('Server started successfully', {
         port: SERVER_CONFIG.PORT,
         env: SERVER_CONFIG.NODE_ENV,
@@ -1682,7 +1683,7 @@ async function startServer() {
       console.log(`📍 API: http://localhost:${SERVER_CONFIG.PORT}/api`);
       console.log(`💾 Database: PostgreSQL`);
       console.log(`📂 Uploads: ${uploadsDir}\n`);
-    });
+    });*/
   } catch (error) {
     logger.error('Failed to start server', {
       error: error.message,
