@@ -49,6 +49,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Use Railway's injected PORT, fallback to 5000 for local dev
+const PORT = process.env.PORT || 8080;
+
+app.get('/', (req, res) => res.send('Hello World!'));
+
+// Bind to all interfaces
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 // CORS configuration with origin validation
 const corsOptions = {
   origin: (origin, callback) => {

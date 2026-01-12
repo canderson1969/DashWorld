@@ -34,16 +34,17 @@ Dash World connects dashcam owners with people who need video evidence of traffi
 - **JWT** + **bcrypt** - Authentication and security
 
 ### Data Storage
-- **JSON files** - Flat-file database (development)
-- **File system** - Video and thumbnail storage
+- **PostgreSQL 16** - Production-ready relational database
+- **File system** - Video and thumbnail storage (local dev)
+- **Cloudflare R2** - Cloud storage for production (S3-compatible)
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js v20 or higher
+- Docker Desktop (for PostgreSQL)
 - npm or yarn package manager
-- 500MB+ free disk space (for uploads)
 
 ### Installation
 
@@ -51,6 +52,15 @@ Dash World connects dashcam owners with people who need video evidence of traffi
 # Clone repository
 git clone https://github.com/yourusername/DashWorld.git
 cd DashWorld
+
+# Start PostgreSQL with Docker
+docker run -d \
+  --name dashworld-db \
+  -e POSTGRES_DB=dashworld \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  postgres:16
 
 # Install backend dependencies
 cd backend
@@ -70,9 +80,11 @@ Create `backend/.env`:
 ```bash
 PORT=5000
 NODE_ENV=development
-CORS_ORIGIN=*
 JWT_SECRET=your-secret-key-change-in-production
-JWT_EXPIRES_IN=7d
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dashworld
+UPLOAD_DIR=../uploads
+THUMBNAILS_DIR=../uploads/thumbnails
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 LOG_LEVEL=info
 ```
 
@@ -100,9 +112,9 @@ cd frontend
 npm run dev
 ```
 
-App runs on `http://localhost:5173`
+App runs on `http://localhost:3000`
 
-**Open browser:** Navigate to `http://localhost:5173`
+**Open browser:** Navigate to `http://localhost:3000`
 
 ## Project Structure
 
@@ -330,6 +342,18 @@ cd backend
 - ✅ Input validation on all endpoints
 - ✅ CORS configuration
 - ✅ Role-based access control
+- ✅ PostgreSQL database (production-ready)
+- ✅ Rate limiting on all API endpoints
+- ✅ Structured logging with Winston
+
+### Rate Limits
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| All API routes | 100 requests | 1 minute |
+| Registration | 5 accounts | 1 hour |
+| Login | 10 attempts | 15 minutes |
+| Password change | 5 attempts | 1 hour |
+| Uploads | 20 uploads | 1 hour |
 
 ### Privacy
 - ⚠️ Users responsible for blurring license plates before upload
@@ -339,11 +363,8 @@ cd backend
 ### Production Requirements
 - ❌ Change `JWT_SECRET` to strong random value
 - ❌ Enable HTTPS (TLS/SSL certificates)
-- ❌ Rate limiting on API endpoints
-- ❌ Input sanitization for XSS prevention
-- ❌ Migrate to production database (PostgreSQL)
-- ❌ Implement CSRF protection
-- ❌ Add request throttling
+- ❌ Configure cloud storage (Cloudflare R2)
+- ❌ Set up email verification
 
 ## Performance
 
@@ -441,62 +462,56 @@ npm run dev -- --debug
 
 ## Deployment
 
-### Frontend Deployment (Vercel/Netlify)
+See **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** for detailed deployment instructions.
 
+### Recommended Stack
+- **Frontend:** Cloudflare Pages
+- **Backend:** Railway
+- **Database:** Railway PostgreSQL
+- **Storage:** Cloudflare R2
+
+### Quick Reference
+
+**Environment Variables (Production):**
 ```bash
-cd frontend
-npm run build
-# Deploy dist/ directory
+# Backend
+NODE_ENV=production
+PORT=5000
+JWT_SECRET=<strong-random-secret>
+DATABASE_URL=<railway-postgresql-url>
+CORS_ORIGINS=https://your-frontend-domain.com
+
+# Frontend
+VITE_API_URL=https://your-backend.railway.app/api
 ```
-
-**Environment Variables:**
-- `VITE_API_URL` - Production API URL
-
-### Backend Deployment (Heroku/Railway)
-
-```bash
-cd backend
-# Procfile: web: node server.js
-```
-
-**Environment Variables:**
-- `PORT` - Provided by platform
-- `NODE_ENV=production`
-- `JWT_SECRET` - Strong random secret
-- `CORS_ORIGIN` - Frontend domain
-
-### Full Stack Deployment (DigitalOcean/AWS)
-
-1. Set up Ubuntu server
-2. Install Node.js v20+
-3. Clone repository
-4. Configure environment variables
-5. Set up Nginx reverse proxy
-6. Enable HTTPS with Let's Encrypt
-7. Set up PM2 for process management
 
 ## Future Enhancements
 
-### Phase 1 (MVP Complete)
+### Phase 1 (Complete)
 - ✅ Video upload with metadata
 - ✅ Browse map and grid views
 - ✅ Footage request system
 - ✅ User authentication
 - ✅ Search and filters
 
-### Phase 2 (In Progress)
-- [ ] Real database (PostgreSQL)
+### Phase 2 (Complete)
+- ✅ PostgreSQL database
+- ✅ Rate limiting
+- ✅ Multi-resolution video encoding (240p-1080p)
+- ✅ In-app messaging system
+- ✅ User profile management
+
+### Phase 3 (In Progress)
+- [ ] Cloud deployment (Cloudflare + Railway)
+- [ ] Cloud storage (Cloudflare R2)
 - [ ] Email notifications
 - [ ] Admin dashboard
-- [ ] Video processing pipeline
-- [ ] Automatic license plate blurring
 
-### Phase 3 (Planned)
+### Phase 4 (Planned)
 - [ ] Mobile apps (React Native)
 - [ ] Real-time updates (WebSockets)
-- [ ] Advanced search (address lookup)
+- [ ] Automatic license plate blurring
 - [ ] Video analytics (AI incident detection)
-- [ ] Integration with insurance companies
 
 ## Contributing
 
@@ -528,6 +543,4 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Built with ❤️ by the Dash World team**
-"# DashWorld" 
-"# DashWorld" 
+**Built with ❤️ by the Dash World team** 

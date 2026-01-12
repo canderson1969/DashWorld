@@ -61,9 +61,9 @@
 
 ## Phase 3: Production Scale (When Needed)
 
-### 3.1 Database Upgrade
-- [ ] Migrate SQLite → PostgreSQL
-- [ ] Set up connection pooling
+### 3.1 Database Upgrade ✅
+- [x] Migrate SQLite → PostgreSQL
+- [x] Set up connection pooling (20 connections, 30s idle timeout)
 - [ ] Add read replicas if needed
 
 ### 3.2 Cloud Storage
@@ -123,17 +123,23 @@ feature/*          ←  Local development
 - [x] Phase 1.4: CORS restriction
 - [x] Phase 2.2: File storage organization (date-based sharding)
 - [x] Phase 2.3: Encoding progress persistence
+- [x] Phase 3.1: PostgreSQL migration
 
 **Phase 1 Complete!** The backend is now ready for deployment with:
 - Secrets managed via environment variables
-- SQLite database with proper schema and indexes
-- Automatic JSON → SQLite migration on first run
+- PostgreSQL database with proper schema and indexes
+- Connection pooling (20 connections, 30s idle timeout)
 - Pagination support for footage endpoint
 - CORS restricted to specific allowed origins
 
 **Phase 2 Progress:**
 - Date-based file organization: `uploads/YYYY/MM/DD/` structure
-- Encoding progress persisted to SQLite (survives server restarts)
+- Encoding progress persisted to database (survives server restarts)
 - Backward compatible with existing files
+
+**Phase 3 Progress:**
+- PostgreSQL migration complete (all routes converted to async/await)
+- Database schema with proper constraints and indexes
+- Ready for Railway deployment
 
 **Next Step:** Phase 2.1 Rate Limiting or Phase 2.4 Job Queue
