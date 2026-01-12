@@ -51,6 +51,7 @@ const app = express();
 
 // Use Railway's injected PORT, fallback to 5000 for local dev
 const PORT = process.env.PORT || 5000;
+print(PORT)
 
 app.get('/', (req, res) => res.send('Hello World!'));
 
@@ -1670,7 +1671,7 @@ async function startServer() {
     }
 
     // Start HTTP server
-    app.listen(SERVER_CONFIG.PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', () => {
       logger.info('Server started successfully', {
         port: SERVER_CONFIG.PORT,
         env: SERVER_CONFIG.NODE_ENV,
