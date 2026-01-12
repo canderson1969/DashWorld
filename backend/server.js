@@ -49,16 +49,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Use Railway's injected PORT, fallback to 5000 for local dev
-const PORT = process.env.PORT || 5000;
-console.log(PORT)
-
-app.get('/', (req, res) => res.send('Hello World!'));
-
-// Bind to all interfaces
-/*app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});*/
+// Use Railway's injected PORT, fallback to config
+const PORT = process.env.PORT || SERVER_CONFIG.PORT;
 
 // CORS configuration with origin validation
 const corsOptions = {
@@ -100,6 +92,15 @@ app.use('/uploads', (req, res, next) => {
 // Apply general API rate limiter to all /api routes
 // Limit: 100 requests per IP per minute
 app.use('/api', apiLimiter);
+
+// Health check endpoint for Railway
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'dashworld-backend' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'dashworld-backend' });
+});
 
 // Auth routes
 app.use('/api/auth', authRoutes);
@@ -1673,18 +1674,18 @@ async function startServer() {
     // Start HTTP server
     app.listen(PORT, '0.0.0.0', () => {
       logger.info('Server started successfully', {
-        port: SERVER_CONFIG.PORT,
+        port: PORT,
         env: SERVER_CONFIG.NODE_ENV,
         uploadsDir: uploadsDir,
         thumbnailsDir: thumbnailsDir,
         dataDir: dataDir,
-        serverUrl: `http://localhost:${SERVER_CONFIG.PORT}`,
-        apiUrl: `http://localhost:${SERVER_CONFIG.PORT}/api`
+        serverUrl: `http://localhost:${PORT}`,
+        apiUrl: `http://localhost:${PORT}/api`
       });
 
       // Keep user-friendly console output for development
       console.log(`\n🚗 Dash World Backend Server Running!`);
-      console.log(`📍 API: http://localhost:${SERVER_CONFIG.PORT}/api`);
+      console.log(`📍 API: http://localhost:${PORT}/api`);
       console.log(`💾 Database: PostgreSQL`);
       console.log(`📂 Uploads: ${uploadsDir}\n`);
     });
